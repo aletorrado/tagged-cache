@@ -45,7 +45,7 @@ function init(initOptions) {
 				return callback(err);
 			}
 			if (data) {
-				return callback(null, JSON.parse(data));
+				return callback(null, data);
 			}
 			try {
 				work(function(err, data, options){
@@ -112,6 +112,8 @@ function init(initOptions) {
 	}
 
 }
+
+module.exports = init;
 
 // var cache = init();
 // cache.wrap("hola", function(callback){
