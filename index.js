@@ -9,10 +9,15 @@ var redis = require("redis");
 
 function init(initOptions) {
 
-	var client = redis.createClient(initOptions || {});
+	initOptions = lodash.defaults(initOptions || {}, {
+		redis: {},
+		prefix: ''
+	})
+
+	var client = redis.createClient(initOptions.redis);
 
 	function get(key, callback) {
-		client.get(['key', key].join(':'), function(err, data){
+		client.get([initOptions.prefix, 'key', key].join(':'), function(err, data){
 			if (err) {
 				return callback(err);
 			}
@@ -29,16 +34,16 @@ function init(initOptions) {
 			ttl = undefined;
 		}
 		if (ttl) {
-			client.setex(['key', key].join(':'), ttl, JSON.stringify(data), callback);
+			client.setex([initOptions.prefix, 'key', key].join(':'), ttl, JSON.stringify(data), callback);
 		} else {
-			client.set(['key', key].join(':'), JSON.stringify(data), callback);
+			client.set([initOptions.prefix, 'key', key].join(':'), JSON.stringify(data), callback);
 		}
 	}
 
-	function wrap(key, work, ttl, callback){
-		if (typeof ttl == 'function') {
-			callback = ttl;
-			ttl = undefined;
+	function wrap(key, work, staticOptions, callback){
+		if (typeof staticOptions == 'function') {
+			callback = staticOptions;
+			staticOptions = undefined;
 		}
 		get(key, function(err, data){
 			if (err) {
@@ -52,19 +57,18 @@ function init(initOptions) {
 					if (err) {
 						return callback(err);
 					}
-					options = options || {};
+					options = lodash.defaults(options || {}, staticOptions, lodash.pick(initOptions, ['ttl']));
 					// we use the ttl we received, or the one in the wrap function
-					var setTtl = options.ttl || ttl;;
 					var multi = client.multi();
-					if (setTtl) {
-						multi.setex(['key', key].join(':'), setTtl, JSON.stringify(data));
+					if (options.ttl) {
+						multi.setex([initOptions.prefix, 'key', key].join(':'), options.ttl, JSON.stringify(data));
 					} else {
-						multi.set(['key', key].join(':'), JSON.stringify(data));
+						multi.set([initOptions.prefix, 'key', key].join(':'), JSON.stringify(data));
 					}
 					if (options.tags) {
 						options.tags.forEach(function(tagName){
-							multi.rpush(['tag', tagName].join(':'), key);
-							multi.expire(['tag', tagName].join(':'), setTtl);
+							multi.rpush([initOptions.prefix, 'tag', tagName].join(':'), key);
+							multi.expire([initOptions.prefix, 'tag', tagName].join(':'), options.ttl);
 						})
 					}
 					multi.exec(function(err){
@@ -81,7 +85,7 @@ function init(initOptions) {
 	}
 
 	function deleteKey(key, callback) {
-		client.del(['key', key].join(':'), callback);
+		client.del([initOptions.prefix, 'key', key].join(':'), callback);
 	}
 
 	function deleteTags(tags, callback) {
@@ -89,15 +93,15 @@ function init(initOptions) {
 			tags = [tags];
 		}
 		async.each(tags, function(tagName, callback){
-			client.lrange(['tag', tagName].join(':'), 0, -1, function(err, keys){
+			client.lrange([initOptions.prefix, 'tag', tagName].join(':'), 0, -1, function(err, keys){
 				if (err) {
 					return callback(err);
 				}
 				var multi = client.multi();
 				keys.forEach(function(key){
-					multi.del(['key', key].join(':'));
+					multi.del([initOptions.prefix, 'key', key].join(':'));
 				});
-				multi.del(['tag', tagName].join(':'));
+				multi.del([initOptions.prefix, 'tag', tagName].join(':'));
 				multi.exec(callback);
 			});
 		}, callback);
